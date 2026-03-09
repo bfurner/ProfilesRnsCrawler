@@ -1,6 +1,9 @@
 # Created by https://gitignore.org
 # Python.gitignore
 
+*.csv
+*.rdf
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

@@ -1,3 +1,4 @@
+import argparse
 from bs4 import BeautifulSoup
 import requests
 import csv
@@ -12,21 +13,31 @@ class ProfilesRnsCrawler:
     def __init__(self, url):
         self.url = url
 
+    def save_profiles_to_csv(self, filename):
+        keys = self.profiles[0].keys()
+
+        with open(filename, 'w', newline='') as output_file:
+            dict_writer = csv.DictWriter(output_file, keys)
+            dict_writer.writeheader()
+            dict_writer.writerows(self.profiles)
+
     def crawl(self):
         response = requests.get(self.url + str(self.current_page))
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Set total_pages if it hasn't been set yet
             if self.total_pages == 0:
                 self.total_pages = int(soup.find_all(id="txtTotalPages")[0].get('value'))
 
-            # Extract relevant data from the soup object
-            # For example, you can extract profile names, links, etc.
-            
+            # Extract profiles from the first page and add them to the list
             for profile in soup.find_all('a', class_='listTableLink'):
                 name = profile.contents[0].strip()
                 link = profile['href']
-                self.profiles.append({'name': name, 'link': link})
+                rdf_link = profile['href'] + '/' + profile['href'].split('/')[-1] + '.rdf'
+                self.profiles.append({'name': name, 'link': link, 'rdf_link': rdf_link})
             
+            # Continue crawling through the remaining pages
             while self.current_page < self.total_pages:
                 self.current_page += 1
                 response = requests.get(self.url + str(self.current_page))
@@ -35,8 +46,8 @@ class ProfilesRnsCrawler:
                     for profile in soup.find_all('a', class_='listTableLink'):
                         name = profile.contents[0].strip()
                         link = profile['href']
-                        self.profiles.append({'name': name, 'link': link})
-                        print(f"Name: {name}, Link: {link}")
+                        rdf_link = profile['href'] + '/' + profile['href'].split('/')[-1] + '.rdf'
+                        self.profiles.append({'name': name, 'link': link, 'rdf_link': rdf_link})
                 else:
                     print(f"Failed to retrieve data from {self.url} on page {self.current_page}")
                     break
@@ -45,21 +56,11 @@ class ProfilesRnsCrawler:
         else:
             print(f"Failed to retrieve data from {self.url}")
             return []
-        
-def main():
-    #url = "https://profiles.uchicago.edu/profiles/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page="
-    url = "https://profiles.rush.edu/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page="
 
-    crawler = ProfilesRnsCrawler(url)
-    profiles = crawler.crawl()
-    for profile in profiles:
-        print(f"Name: {profile['name']}, Link: {profile['link']}")
-    keys = profiles[0].keys()
-
-    with open('profiles_rush.csv', 'w', newline='') as output_file:
-        dict_writer = csv.DictWriter(output_file, keys)
-        dict_writer.writeheader()
-        dict_writer.writerows(profiles)
-
-if __name__ == "__main__":
-    main()
+    def download_profile_rdf(self, profile_url):
+        response = requests.get(profile_url)
+        if response.status_code == 200:
+            return response.content
+        else:
+            print(f"Failed to retrieve data from {profile_url}")
+            return ""
