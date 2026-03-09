@@ -1,3 +1,6 @@
+from fileinput import filename
+from pathlib import Path
+
 import ProfilesRnsCrawler as prc
 import argparse
 import time
@@ -14,7 +17,7 @@ def main():
         parser.print_help()
         exit(1)
 
-    # url = "https://profiles.rush.edu/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page="
+    # Example url = "https://profiles.rush.edu/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page="
     url = args.url
 
     crawler = prc.ProfilesRnsCrawler(url)
@@ -27,7 +30,11 @@ def main():
         rdf_data = crawler.download_profile_rdf(profile['rdf_link'])
         if rdf_data:
             print(f"Successfully downloaded RDF for {profile['name']}")
-            with open(profile['rdf_link'].split('/')[-1], "wb") as f:
+
+            script_location = Path(__file__).absolute().parent
+            file_location = script_location / f"{args.rdf_folder}/{profile['rdf_link'].split('/')[-1]}".strip()
+
+            with open(file_location, "wb") as f:
                 f.write(rdf_data)
         time.sleep(5)  # Sleep for 5 seconds between requests to avoid overwhelming the server
 

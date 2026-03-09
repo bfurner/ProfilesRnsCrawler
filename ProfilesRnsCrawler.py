@@ -1,7 +1,7 @@
-import argparse
 from bs4 import BeautifulSoup
 import requests
 import csv
+from pathlib import Path
 
 class ProfilesRnsCrawler:
 
@@ -16,7 +16,10 @@ class ProfilesRnsCrawler:
     def save_profiles_to_csv(self, filename):
         keys = self.profiles[0].keys()
 
-        with open(filename, 'w', newline='') as output_file:
+        script_location = Path(__file__).absolute().parent
+        file_location = script_location / filename.strip()
+
+        with open(file_location, 'w', newline='') as output_file:
             dict_writer = csv.DictWriter(output_file, keys)
             dict_writer.writeheader()
             dict_writer.writerows(self.profiles)

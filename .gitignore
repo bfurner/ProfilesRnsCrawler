@@ -1,7 +1,7 @@
 # Created by https://gitignore.org
 # Python.gitignore
 
-*.csv
+# *.csv
 *.rdf
 .vscode/
 
