@@ -8,8 +8,14 @@ RUN_TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="${LOG_FILE:-$LOG_DIR/add_email_to_graphdb_${RUN_TIMESTAMP}.log}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 export GRAPHDB_STATEMENTS_URL="${GRAPHDB_STATEMENTS_URL:-http://localhost:7200/repositories/ITM_Julian/statements}"
-export GRAPHDB_NAMED_GRAPH="${GRAPHDB_NAMED_GRAPH:-https://profiles.uchicago.edu/profiles/}"
-export CSV_FILE="${CSV_FILE:-email/uchicago_extracted_all.csv}"
+
+# UChicago
+# export GRAPHDB_NAMED_GRAPH="${GRAPHDB_NAMED_GRAPH:-https://profiles.uchicago.edu/profiles/}"
+# export CSV_FILE="${CSV_FILE:-email/uchicago_extracted_all.csv}"
+# Rush
+export GRAPHDB_NAMED_GRAPH="${GRAPHDB_NAMED_GRAPH:-https://profiles.rush.edu/}"
+export CSV_FILE="${CSV_FILE:-email/rush_extracted_all.csv}"
+
 export CHUNK_SIZE="${CHUNK_SIZE:-500}"
 
 mkdir -p "$LOG_DIR"

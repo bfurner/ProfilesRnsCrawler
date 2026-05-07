@@ -45,8 +45,10 @@ export EMAIL_HANDLER_URL="${EMAIL_HANDLER_URL:-https://profiles.rush.edu/profile
 # export OUTPUT_CSV_FILE="${OUTPUT_CSV_FILE:-email/rush_extracted_emails_sample.csv}"
 
 # # actual list of encrypted emails to process
-export CSV_FILE="${CSV_FILE:-email/rush_emailencrypted.csv}"
-export OUTPUT_CSV_FILE="${OUTPUT_CSV_FILE:-email/rush_extracted_emails.csv}"
+# export CSV_FILE="${CSV_FILE:-email/rush_emailencrypted.csv}"
+# export OUTPUT_CSV_FILE="${OUTPUT_CSV_FILE:-email/rush_extracted_emails.csv}"
+export CSV_FILE="${CSV_FILE:-email/rush_emailencrypted_failed.csv}"
+export OUTPUT_CSV_FILE="${OUTPUT_CSV_FILE:-email/rush_extracted_failed_emails.csv}"
 
 
 
