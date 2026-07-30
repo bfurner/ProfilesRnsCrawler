@@ -3,12 +3,16 @@
 
 Docs:
 https://graphdb.ontotext.com/documentation/10.8/loading-and-updating-data.html#loading-via-http-with-curl
+https://graphdb.ontotext.com/documentation/11.3/enabling-security.html
+https://graphdb.ontotext.com/documentation/11.4/access-control.html#basic-authentication
 
+When GraphDB security is enabled, pass credentials via --username/--password
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import shlex
 import shutil
@@ -52,9 +56,46 @@ def statements_url(base_url: str, repo: str) -> str:
     return f"{base_url.rstrip('/')}/repositories/{repo}/statements"
 
 
+def resolve_credentials(
+    username: str | None, password: str | None
+) -> tuple[str | None, str | None]:
+    """Return (username, password) for Basic auth, or (None, None) if unused."""
+    if not username:
+        if password:
+            raise SystemExit(
+                "GRAPHDB_PASSWORD / --password set without a username "
+                "(use --username or GRAPHDB_USERNAME)"
+            )
+        return None, None
+    if password is None:
+        password = getpass.getpass(f"Password for GraphDB user {username!r}: ")
+    return username, password
+
+
+def redact_curl_args(args: list[str]) -> list[str]:
+    """Mask password in --user user:pass for dry-run output."""
+    redacted: list[str] = []
+    hide_next = False
+    for arg in args:
+        if hide_next:
+            if ":" in arg:
+                user, _, _ = arg.partition(":")
+                redacted.append(f"{user}:***")
+            else:
+                redacted.append("***") # mask the entire next argument, just in case
+            hide_next = False
+            continue
+        if arg in ("-u", "--user"):
+            redacted.append(arg)
+            hide_next = True
+            continue
+        redacted.append(arg)
+    return redacted
+
+
 def run_curl(args: list[str], dry_run: bool) -> tuple[int, str]:
     if dry_run:
-        print("  " + " ".join(shlex.quote(a) for a in args))
+        print("  " + " ".join(shlex.quote(a) for a in redact_curl_args(args)))
         return 204, ""
     result = subprocess.run(args, capture_output=True, text=True)
     body = (result.stdout or "") + (result.stderr or "")
@@ -69,7 +110,13 @@ def run_curl(args: list[str], dry_run: bool) -> tuple[int, str]:
     return http_code, body
 
 
-def load_file(path: Path, url: str, dry_run: bool) -> int:
+def load_file(
+    path: Path,
+    url: str,
+    dry_run: bool,
+    username: str | None = None,
+    password: str | None = None,
+) -> int:
     curl = [
         "curl",
         "-sS",
@@ -83,8 +130,11 @@ def load_file(path: Path, url: str, dry_run: bool) -> int:
         f"Content-Type: {RDF_CONTENT_TYPE}",
         "--data-binary",
         f"@{path}",
-        url,
     ]
+    if username is not None and password is not None:
+        # GraphDB Basic auth (enabled by default when security is on).
+        curl.extend(["--user", f"{username}:{password}"])
+    curl.append(url)
     code, body = run_curl(curl, dry_run)
     if not str(code).startswith("2"):
         print(f"  FAILED HTTP {code}: {body}", file=sys.stderr)
@@ -95,7 +145,7 @@ def main() -> None:
     load_env_file(SCRIPT_DIR / "graphdb.env")
 
     parser = argparse.ArgumentParser(
-        description="Load RDF into GraphDB via HTTP using curl (RDF4J /statements)."
+        description="Load RDF into GraphDB via HTTP using curl."
     )
     parser.add_argument(
         "paths",
@@ -116,6 +166,18 @@ def main() -> None:
         help="Repository id (default: $GRAPHDB_REPO)",
     )
     parser.add_argument(
+        "-u",
+        "--username",
+        default=os.environ.get("GRAPHDB_USERNAME"),
+        help="GraphDB username when security is enabled (default: $GRAPHDB_USERNAME)",
+    )
+    parser.add_argument(
+        "-p",
+        "--password",
+        default=os.environ.get("GRAPHDB_PASSWORD"),
+        help="GraphDB password (default: $GRAPHDB_PASSWORD; prompted if username set)",
+    )
+    parser.add_argument(
         "-n",
         "--dry-run",
         action="store_true",
@@ -128,6 +190,8 @@ def main() -> None:
     if shutil.which("curl") is None:
         raise SystemExit("curl is required on PATH")
 
+    username, password = resolve_credentials(args.username, args.password)
+
     files = collect_files(args.paths)
     if not files:
         raise SystemExit("No RDF files found.")
@@ -136,6 +200,7 @@ def main() -> None:
 
     print(f"GraphDB: {args.base_url.rstrip('/')}")
     print(f"Repo:    {args.repo}")
+    print(f"Auth:    {username if username else '(none)'}")
     print(f"Files:   {len(files)}")
     print()
 
@@ -143,7 +208,7 @@ def main() -> None:
     fail = 0
     for i, path in enumerate(files, start=1):
         print(f"[{i}/{len(files)}] POST {path.name}")
-        code = load_file(path, url, args.dry_run)
+        code = load_file(path, url, args.dry_run, username, password)
         if str(code).startswith("2"):
             ok += 1
         else:
