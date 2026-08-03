@@ -24,7 +24,9 @@ CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "500"))
 
 
 def escape_sparql_string(value: str) -> str:
-  return value.replace("\\", "\\\\").replace('"', '\\"')
+  return (
+    value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+  )
 
 
 def load_people_from_csv(csv_file: str) -> list[tuple[str, str]]:
