@@ -1,0 +1,44 @@
+aws_region = "us-east-2"
+app_name   = "profiles-rns-graphdb"
+env_name   = "staging"
+
+# Resource names (set explicitly; no locals)
+bucket_name                 = "profiles-rns-graphdb-staging-rdf"
+ecr_repo_name               = "profiles-rns-graphdb-staging-loader-repo"
+ecs_app_name                = "profiles-rns-graphdb-staging"
+ecs_task_role               = "profiles-rns-graphdb-staging-ecs-task-role"
+eventbridge_ecs_role        = "profiles-rns-graphdb-staging-eventbridge-ecs-role"
+ecs_trigger_event_rule_name = "profiles-rns-graphdb-staging-ecs-trigger-rule"
+graphdb_password_ssm_name   = "/profiles-rns-graphdb/staging/graphdb_password"
+failure_notification_topic  = "profiles-rns-graphdb-staging-ecs-failure-topic"
+
+force_delete        = false
+s3_versioning       = "Enabled"
+s3_encryption       = true
+s3_enable_lifecycle = false
+app_tag             = "latest"
+app_port            = 8080
+
+# Sundays at 12:00 UTC
+schedule_expression = "cron(0 12 ? * SUN *)"
+
+# Network: task must reach GraphDB + AWS APIs (S3/SSM)
+security_group_id = "sg-xxxxxxxx"
+subnet_ids        = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
+assign_public_ip  = true
+
+graphdb_base_url = "https://graphdb.example.org:7200"
+graphdb_repo     = "profiles"
+graphdb_username = "admin"
+graphdb_password = "CHANGE_ME"
+
+rdf_s3_prefix = "rdf/"
+load_paths    = "/data/rdf"
+
+# Optional failure emails (leave empty to skip SNS topic)
+notification_emails = []
+
+default_tags = {
+  Environment = "Staging"
+  Project     = "profiles-rns-graphdb"
+}
