@@ -17,16 +17,28 @@ output "graphdb_password_ssm_parameter" {
   value       = aws_ssm_parameter.graphdb_password.name
 }
 
-output "ecs_cluster_arn" {
-  value = module.ecs_fargate[0].cluster_arn
+output "batch_compute_environment_arn" {
+  value = aws_batch_compute_environment.loader.arn
 }
 
-output "ecs_task_definition_arn" {
-  value = module.ecs_fargate[0].task_definition_arn
+output "batch_job_queue_arn" {
+  value = aws_batch_job_queue.loader.arn
+}
+
+output "batch_job_definition_arn" {
+  value = aws_batch_job_definition.loader.arn
+}
+
+output "batch_log_group_name" {
+  value = aws_cloudwatch_log_group.batch.name
 }
 
 output "schedule_expression" {
   value = var.schedule_expression
+}
+
+output "batch_trigger_event_rule_name" {
+  value = aws_cloudwatch_event_rule.batch_schedule.name
 }
 
 output "failure_topic_arn" {

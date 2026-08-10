@@ -30,9 +30,42 @@ resource "aws_ssm_parameter" "graphdb_password" {
   }
 }
 
-# IAM role assumed by the ECS Fargate task (S3, SSM, logs).
-resource "aws_iam_role" "ecs_task_role" {
-  name = var.ecs_task_role
+# CloudWatch log group for Batch job container logs.
+resource "aws_cloudwatch_log_group" "batch" {
+  name              = var.batch_log_group_name
+  retention_in_days = 7
+
+  tags = var.default_tags
+}
+
+# IAM role for the AWS Batch service (managed compute environment).
+resource "aws_iam_role" "batch_service" {
+  name = var.batch_service_role
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "batch.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.default_tags
+}
+
+resource "aws_iam_role_policy_attachment" "batch_service" {
+  role       = aws_iam_role.batch_service.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole"
+}
+
+# IAM role assumed by the Batch job container (S3, SSM, logs).
+resource "aws_iam_role" "batch_job" {
+  name = var.batch_job_role
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -50,10 +83,10 @@ resource "aws_iam_role" "ecs_task_role" {
   tags = var.default_tags
 }
 
-# Permissions for the ECS task role.
-resource "aws_iam_role_policy" "ecs_task_policy" {
-  name = "${var.ecs_task_role}-policy"
-  role = aws_iam_role.ecs_task_role.id
+# Permissions for the Batch job role.
+resource "aws_iam_role_policy" "batch_job" {
+  name = "${var.batch_job_role}-policy"
+  role = aws_iam_role.batch_job.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -92,15 +125,34 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
   })
 }
 
-# Attach the AWS-managed ECS task execution policy (pull images, write logs).
-resource "aws_iam_role_policy_attachment" "ecs_task_execution_role" {
-  role       = aws_iam_role.ecs_task_role.name
+# Execution role for Fargate Batch (pull ECR image, write logs).
+resource "aws_iam_role" "batch_execution" {
+  name = var.batch_execution_role
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.default_tags
+}
+
+resource "aws_iam_role_policy_attachment" "batch_execution" {
+  role       = aws_iam_role.batch_execution.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# IAM role assumed by EventBridge to start the ECS task.
-resource "aws_iam_role" "eventbridge_ecs_role" {
-  name = var.eventbridge_ecs_role
+# IAM role assumed by EventBridge to submit Batch jobs.
+resource "aws_iam_role" "eventbridge_batch" {
+  name = var.eventbridge_batch_role
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -118,10 +170,10 @@ resource "aws_iam_role" "eventbridge_ecs_role" {
   tags = var.default_tags
 }
 
-# Permissions for EventBridge to RunTask and PassRole.
-resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
-  name = "${var.eventbridge_ecs_role}-policy"
-  role = aws_iam_role.eventbridge_ecs_role.id
+# Permissions for EventBridge to SubmitJob and PassRole.
+resource "aws_iam_role_policy" "eventbridge_batch" {
+  name = "${var.eventbridge_batch_role}-policy"
+  role = aws_iam_role.eventbridge_batch.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -129,86 +181,147 @@ resource "aws_iam_role_policy" "eventbridge_ecs_policy" {
       {
         Effect = "Allow"
         Action = [
-          "ecs:RunTask"
+          "batch:SubmitJob"
         ]
         Resource = [
-          module.ecs_fargate[0].task_definition_arn
+          aws_batch_job_queue.loader.arn,
+          aws_batch_job_definition.loader.arn
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = "iam:PassRole"
-        Resource = aws_iam_role.ecs_task_role.arn
+        Effect = "Allow"
+        Action = "iam:PassRole"
+        Resource = [
+          aws_iam_role.batch_job.arn,
+          aws_iam_role.batch_execution.arn
+        ]
       }
     ]
   })
 }
 
-# One-shot Fargate task (no long-running service) that runs LoadToGraphDB.
-module "ecs_fargate" {
-  source = "git::ssh://git@github.com/chicagopcdc/terraform_modules.git//aws/ecs?ref=0.5.1"
+# Managed Fargate compute environment for Batch.
+resource "aws_batch_compute_environment" "loader" {
+  compute_environment_name = var.batch_compute_environment_name
+  type                     = "MANAGED"
+  state                    = "ENABLED"
 
-  app_name               = var.ecs_app_name
-  app_port               = var.app_port
-  app_image              = "${module.ecr_loader.repo_url}:${var.app_tag}"
-  ecs_execution_role_arn = aws_iam_role.ecs_task_role.arn
-  security_group_id      = var.security_group_id
-  subnet_ids             = var.subnet_ids
-  assign_public_ip       = var.assign_public_ip
-  single_execution       = true
-  include_service        = false
+  service_role = aws_iam_role.batch_service.arn
 
-  environment_vars = [
-    {
-      name  = "RDF_S3_BUCKET"
-      value = module.s3_rdf.bucket_name
-    },
-    {
-      name  = "RDF_S3_PREFIX"
-      value = var.rdf_s3_prefix
-    },
-    {
-      name  = "LOAD_PATHS"
-      value = var.load_paths
-    },
-    {
-      name  = "GRAPHDB_BASE_URL"
-      value = var.graphdb_base_url
-    },
-    {
-      name  = "GRAPHDB_REPO"
-      value = var.graphdb_repo
-    },
-    {
-      name  = "GRAPHDB_USERNAME"
-      value = var.graphdb_username
-    },
-    {
-      name  = "GRAPHDB_PASSWORD_SSM_PARAM"
-      value = aws_ssm_parameter.graphdb_password.name
-    },
-    {
-      name  = "AWS_REGION"
-      value = var.aws_region
-    }
-  ]
+  compute_resources {
+    type               = "FARGATE"
+    max_vcpus          = var.batch_max_vcpus
+    subnets            = var.subnet_ids
+    security_group_ids = [var.security_group_id]
+  }
 
-  count = 1
+  depends_on = [aws_iam_role_policy_attachment.batch_service]
+
+  tags = var.default_tags
 }
 
-# Weekly EventBridge schedule that starts the ECS loader task.
-module "ecs_fargate_trigger" {
-  source = "git::ssh://git@github.com/chicagopcdc/terraform_modules.git//aws/eventbridge_ecs_trigger?ref=0.5.1"
+# Job queue backed by the Fargate compute environment.
+resource "aws_batch_job_queue" "loader" {
+  name     = var.batch_job_queue_name
+  state    = "ENABLED"
+  priority = 1
 
-  event_rule_name     = var.ecs_trigger_event_rule_name
+  compute_environment_order {
+    order               = 1
+    compute_environment = aws_batch_compute_environment.loader.arn
+  }
+
+  tags = var.default_tags
+}
+
+# Job definition that runs the LoadToGraphDB container image.
+resource "aws_batch_job_definition" "loader" {
+  name                  = var.batch_job_definition_name
+  type                  = "container"
+  platform_capabilities = ["FARGATE"]
+
+  container_properties = jsonencode({
+    image            = "${module.ecr_loader.repo_url}:${var.app_tag}"
+    jobRoleArn       = aws_iam_role.batch_job.arn
+    executionRoleArn = aws_iam_role.batch_execution.arn
+    resourceRequirements = [
+      {
+        type  = "VCPU"
+        value = tostring(var.batch_vcpu)
+      },
+      {
+        type  = "MEMORY"
+        value = tostring(var.batch_memory)
+      }
+    ]
+    networkConfiguration = {
+      assignPublicIp = var.assign_public_ip ? "ENABLED" : "DISABLED"
+    }
+    environment = [
+      {
+        name  = "RDF_S3_BUCKET"
+        value = module.s3_rdf.bucket_name
+      },
+      {
+        name  = "RDF_S3_PREFIX"
+        value = var.rdf_s3_prefix
+      },
+      {
+        name  = "LOAD_PATHS"
+        value = var.load_paths
+      },
+      {
+        name  = "GRAPHDB_BASE_URL"
+        value = var.graphdb_base_url
+      },
+      {
+        name  = "GRAPHDB_REPO"
+        value = var.graphdb_repo
+      },
+      {
+        name  = "GRAPHDB_USERNAME"
+        value = var.graphdb_username
+      },
+      {
+        name  = "GRAPHDB_PASSWORD_SSM_PARAM"
+        value = aws_ssm_parameter.graphdb_password.name
+      },
+      {
+        name  = "AWS_REGION"
+        value = var.aws_region
+      }
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.batch.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "batch"
+      }
+    }
+  })
+
+  tags = var.default_tags
+}
+
+# Weekly EventBridge schedule that submits the Batch job.
+resource "aws_cloudwatch_event_rule" "batch_schedule" {
+  name                = var.batch_trigger_event_rule_name
+  description         = "Weekly schedule to submit the GraphDB RDF load Batch job"
   schedule_expression = var.schedule_expression
-  ecs_cluster_arn     = module.ecs_fargate[0].cluster_arn
-  role_arn            = aws_iam_role.eventbridge_ecs_role.arn
-  task_definition_arn = module.ecs_fargate[0].task_definition_arn
-  security_group_id   = var.security_group_id
-  subnet_ids          = var.subnet_ids
 
-  count = 1
+  tags = var.default_tags
+}
+
+resource "aws_cloudwatch_event_target" "batch_schedule" {
+  rule     = aws_cloudwatch_event_rule.batch_schedule.name
+  arn      = aws_batch_job_queue.loader.arn
+  role_arn = aws_iam_role.eventbridge_batch.arn
+
+  batch_target {
+    job_definition = aws_batch_job_definition.loader.arn
+    job_name       = var.batch_scheduled_job_name
+  }
 }
 
 # Optional SNS topic for failure email notifications.

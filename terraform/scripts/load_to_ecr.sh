@@ -2,9 +2,6 @@
 set -euo pipefail
 
 # Build LoadToGraphDB container and push to the ECR repo created by Terraform.
-# Usage:
-#   ./terraform/scripts/load_to_ecr.sh              # uses terraform output + default AWS creds
-#   ./terraform/scripts/load_to_ecr.sh <aws-profile>
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TF_DIR="${ROOT_DIR}/terraform"

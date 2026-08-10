@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Upload local rdf/ tree to the staging S3 bucket.
-# Usage:
-#   ./terraform/scripts/upload_rdf.sh                 # uses terraform output
-#   RDF_BUCKET=my-bucket ./terraform/scripts/upload_rdf.sh
-#   ./terraform/scripts/upload_rdf.sh <aws-profile>
+# Upload local rdf_test/ tree to the staging S3 bucket.
+
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TF_DIR="${ROOT_DIR}/terraform"
 AWS_REGION="${AWS_REGION:-us-east-2}"
-LOCAL_RDF="${LOCAL_RDF:-${ROOT_DIR}/rdf}"
+LOCAL_RDF="${LOCAL_RDF:-${ROOT_DIR}/rdf_test}"
 S3_PREFIX="${S3_PREFIX:-rdf/}"
 
 if [[ -n "${1:-}" ]]; then

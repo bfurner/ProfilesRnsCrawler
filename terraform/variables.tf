@@ -24,24 +24,54 @@ variable "ecr_repo_name" {
   description = "ECR repository name for the LoadToGraphDB image"
 }
 
-variable "ecs_app_name" {
+variable "batch_compute_environment_name" {
   type        = string
-  description = "Name prefix passed to the ECS module (cluster/task family naming)"
+  description = "AWS Batch compute environment name"
 }
 
-variable "ecs_task_role" {
+variable "batch_job_queue_name" {
   type        = string
-  description = "IAM role name for the ECS task"
+  description = "AWS Batch job queue name"
 }
 
-variable "eventbridge_ecs_role" {
+variable "batch_job_definition_name" {
   type        = string
-  description = "IAM role name for EventBridge to run ECS tasks"
+  description = "AWS Batch job definition name"
 }
 
-variable "ecs_trigger_event_rule_name" {
+variable "batch_scheduled_job_name" {
   type        = string
-  description = "EventBridge rule name for the weekly ECS trigger"
+  description = "Job name used when EventBridge submits the Batch job"
+}
+
+variable "batch_service_role" {
+  type        = string
+  description = "IAM role name for the AWS Batch service"
+}
+
+variable "batch_job_role" {
+  type        = string
+  description = "IAM role name assumed by the Batch job container"
+}
+
+variable "batch_execution_role" {
+  type        = string
+  description = "IAM execution role name for Fargate Batch (ECR pull / logs)"
+}
+
+variable "eventbridge_batch_role" {
+  type        = string
+  description = "IAM role name for EventBridge to submit Batch jobs"
+}
+
+variable "batch_trigger_event_rule_name" {
+  type        = string
+  description = "EventBridge rule name for the weekly Batch trigger"
+}
+
+variable "batch_log_group_name" {
+  type        = string
+  description = "CloudWatch log group for Batch job logs"
 }
 
 variable "graphdb_password_ssm_name" {
@@ -56,14 +86,26 @@ variable "failure_notification_topic" {
 
 variable "app_tag" {
   type        = string
-  description = "Docker image tag to run in ECS"
+  description = "Docker image tag to run in Batch"
   default     = "latest"
 }
 
-variable "app_port" {
+variable "batch_max_vcpus" {
   type        = number
-  description = "Container port expected by the ECS module (unused by the loader, but required)"
-  default     = 8080
+  description = "Max vCPUs for the Batch Fargate compute environment"
+  default     = 4
+}
+
+variable "batch_vcpu" {
+  type        = number
+  description = "vCPUs reserved for each Batch job"
+  default     = 0.25
+}
+
+variable "batch_memory" {
+  type        = number
+  description = "Memory (MiB) reserved for each Batch job"
+  default     = 512
 }
 
 variable "force_delete" {
@@ -92,23 +134,23 @@ variable "s3_enable_lifecycle" {
 
 variable "schedule_expression" {
   type        = string
-  description = "EventBridge schedule for the GraphDB load task (weekly by default)"
+  description = "EventBridge schedule for the GraphDB load job (weekly by default)"
   default     = "cron(0 12 ? * SUN *)" # Sundays 12:00 UTC
 }
 
 variable "security_group_id" {
   type        = string
-  description = "Security group for the ECS task (must allow egress to GraphDB and S3/SSM endpoints)"
+  description = "Security group for the Batch job (must allow egress to GraphDB and S3/SSM endpoints)"
 }
 
 variable "subnet_ids" {
   type        = list(string)
-  description = "Subnet IDs for the ECS task ENIs"
+  description = "Subnet IDs for the Batch Fargate compute environment"
 }
 
 variable "assign_public_ip" {
   type        = bool
-  description = "Assign a public IP to the Fargate task (needed if subnets have no NAT for S3/GraphDB egress)"
+  description = "Assign a public IP to the Fargate Batch job (needed if subnets have no NAT for S3/GraphDB egress)"
   default     = true
 }
 
