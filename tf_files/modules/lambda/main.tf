@@ -1,8 +1,19 @@
-# create archive file for deployment
+resource "null_resource" "install_layer_dependencies" {
+  provisioner "local-exec" {
+    command = "pip install -r ${var.lambda_function_source_dir}/requirements.txt -t ${var.lambda_function_source_dir}/package && cp ${var.lambda_function_source_dir}/*.py ${var.lambda_function_source_dir}/package/"
+  }
+  triggers = {
+    requirements_hash = fileexists("${var.lambda_function_source_dir}/requirements.txt") ? filemd5("${var.lambda_function_source_dir}/requirements.txt") : "none"
+  }
+}
+
 data "archive_file" "lambda_function" {
-  source_dir = "${var.lambda_function_source_dir}"
+  source_dir = "${var.lambda_function_source_dir}/package"
   output_path = "${var.lambda_function_output_path}"
   type        = "zip"
+  depends_on = [
+    null_resource.install_layer_dependencies
+  ]
   excludes = [
     "__pycache__"
   ]
