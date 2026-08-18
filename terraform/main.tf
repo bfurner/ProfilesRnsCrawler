@@ -333,3 +333,59 @@ module "sns_failure_topic" {
 
   count = length(var.notification_emails) > 0 ? 1 : 0
 }
+
+# EventBridge rule that publishes Batch job failures on this queue to SNS.
+resource "aws_cloudwatch_event_rule" "batch_job_failure" {
+  count = length(var.notification_emails) > 0 ? 1 : 0
+
+  name        = "${var.app_name}-batch-job-failure"
+  description = "Notify when the Profiles RNS crawler Batch job fails"
+
+  event_pattern = jsonencode({
+    source      = ["aws.batch"]
+    detail-type = ["Batch Job State Change"]
+    detail = {
+      status = ["FAILED"]
+      jobQueue = [
+        aws_batch_job_queue.loader.arn
+      ]
+    }
+  })
+
+  tags = var.default_tags
+}
+
+resource "aws_cloudwatch_event_target" "batch_job_failure_sns" {
+  count = length(var.notification_emails) > 0 ? 1 : 0
+
+  rule = aws_cloudwatch_event_rule.batch_job_failure[0].name
+  arn  = module.sns_failure_topic[0].topic_arn
+}
+
+resource "aws_sns_topic_policy" "batch_failure" {
+  count = length(var.notification_emails) > 0 ? 1 : 0
+
+  arn = module.sns_failure_topic[0].topic_arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [{
+      Effect = "Allow"
+
+      Principal = {
+        Service = "events.amazonaws.com"
+      }
+
+      Action = "sns:Publish"
+
+      Resource = module.sns_failure_topic[0].topic_arn
+
+      Condition = {
+        ArnEquals = {
+          "aws:SourceArn" = aws_cloudwatch_event_rule.batch_job_failure[0].arn
+        }
+      }
+    }]
+  })
+}
