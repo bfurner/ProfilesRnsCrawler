@@ -48,21 +48,6 @@ resource "aws_iam_role_policy" "lambda_s3_write" {
   })
 }
 
-resource "aws_iam_role_policy" "lambda_s3_list" {
-  name = "rdf-lambda-s3-list"
-  role = aws_iam_role.lambda_exec_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:ListBucket"]
-      Resource = module.s3_bucket.bucket_arn
-
-    }]
-  })
-}
-
 resource "aws_iam_role_policy" "step_function_invoke_lambda" {
   name = "invoke-lambdas"
   role = aws_iam_role.step_function_role.id
@@ -109,9 +94,8 @@ resource "aws_iam_role_policy" "eventbridge_start_execution" {
 }
 
 module "s3_bucket" {
-  source = "./modules/s3"
-
-  bucket_name  = "rdf-bucket-vtc-test"
+  source       = "./modules/s3"
+  bucket_name  = var.bucket_name
   force_delete = true
   versioning   = "Enabled"
 }
@@ -140,6 +124,9 @@ module "lambda_download" {
   timeout                     = 900
   memory_size                 = 128
 
+  lambda_environment_variables = {
+    BUCKET = module.s3_bucket.bucket_name
+  }
 }
 
 module "lambda_load" {
@@ -155,8 +142,8 @@ module "lambda_load" {
 
   lambda_environment_variables = {
     BUCKET  = module.s3_bucket.bucket_name
-    GRAPHDB = "http://localhost:7200"
-    REPO    = "profiles"
+    GRAPHDB = "${var.graphdb_url}"
+    REPO    = "${var.repo_name}"
   }
 }
 
@@ -183,18 +170,19 @@ resource "aws_sfn_state_machine" "rdf_pipeline" {
             DownloadFile = {
               Type     = "Task"
               Resource = module.lambda_download.lambda_arn
+              Next     = "Load"
+            }
+            Load = {
+              Type     = "Task"
+              Resource = module.lambda_load.lambda_arn
               End      = true
             }
           }
         }
         ResultPath = null
-        Next       = "Load"
+        End        = true
       }
-      Load = {
-        Type     = "Task"
-        Resource = module.lambda_load.lambda_arn
-        End      = true
-      }
+
     }
   })
 
@@ -216,6 +204,6 @@ resource "aws_cloudwatch_event_target" "rdf_pipeline_target" {
   role_arn  = aws_iam_role.eventbridge_sfn_role.arn
 
   input = jsonencode({
-    "url" : "https://profiles.rush.edu/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page="
+    "url" : "${var.crawl_url}"
   })
 }

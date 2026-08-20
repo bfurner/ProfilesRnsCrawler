@@ -4,6 +4,7 @@ resource "null_resource" "install_layer_dependencies" {
   }
   triggers = {
     requirements_hash = fileexists("${var.lambda_function_source_dir}/requirements.txt") ? filemd5("${var.lambda_function_source_dir}/requirements.txt") : "none"
+    source_hash        = md5(join("", [for f in fileset(var.lambda_function_source_dir, "*.py") : filemd5("${var.lambda_function_source_dir}/${f}")]))
   }
 }
 

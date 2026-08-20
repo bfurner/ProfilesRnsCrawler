@@ -25,7 +25,7 @@ class ProfilesRnsCrawler:
             dict_writer.writerows(self.profiles)
 
     def crawl(self):
-        response = requests.get(self.url + str(self.current_page))
+        response = requests.get(self.url + str(self.current_page), timeout=60)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -43,7 +43,7 @@ class ProfilesRnsCrawler:
             # Continue crawling through the remaining pages
             while self.current_page < self.total_pages:
                 self.current_page += 1
-                response = requests.get(self.url + str(self.current_page))
+                response = requests.get(self.url + str(self.current_page), timeout=60)
                 if response.status_code == 200:
                     soup = BeautifulSoup(response.content, 'html.parser')
                     for profile in soup.find_all('a', class_='listTableLink'):
@@ -59,11 +59,3 @@ class ProfilesRnsCrawler:
         else:
             print(f"Failed to retrieve data from {self.url}")
             return []
-
-    def download_profile_rdf(self, profile_url):
-        response = requests.get(profile_url)
-        if response.status_code == 200:
-            return response.content
-        else:
-            print(f"Failed to retrieve data from {profile_url}")
-            return ""
