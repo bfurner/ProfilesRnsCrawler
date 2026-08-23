@@ -240,6 +240,10 @@ resource "aws_batch_job_definition" "loader" {
   type                  = "container"
   platform_capabilities = ["FARGATE"]
 
+  retry_strategy {
+    attempts = 2
+  }
+
   container_properties = jsonencode({
     image            = "${module.ecr_loader.repo_url}:${var.app_tag}"
     jobRoleArn       = aws_iam_role.batch_job.arn
@@ -254,6 +258,7 @@ resource "aws_batch_job_definition" "loader" {
         value = tostring(var.batch_memory)
       }
     ]
+    # DISABLED requires private subnets with NAT (or VPC endpoints) for ECR/S3/SSM/GraphDB egress.
     networkConfiguration = {
       assignPublicIp = var.assign_public_ip ? "ENABLED" : "DISABLED"
     }
@@ -326,7 +331,7 @@ resource "aws_cloudwatch_event_target" "batch_schedule" {
 
 # Optional SNS topic for failure email notifications.
 module "sns_failure_topic" {
-  source = "git::ssh://git@github.com/chicagopcdc/terraform_modules.git//aws/sns?ref=0.5.1"
+  source = "git::ssh://git@github.com/chicagopcdc/terraform_modules.git//aws/sns?ref=1.0.5"
 
   notification_emails = var.notification_emails
   topic_name          = var.failure_notification_topic

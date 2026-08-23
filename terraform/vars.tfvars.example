@@ -30,7 +30,8 @@ batch_memory        = 512
 # Sundays at 12:00 UTC
 schedule_expression = "cron(0 12 ? * SUN *)"
 
-# Network: task must reach GraphDB + AWS APIs (S3/SSM)
+# Network: task must reach GraphDB + AWS APIs (S3/SSM/ECR).
+# assign_public_ip = false only if these subnets already have NAT (or VPC endpoints).
 security_group_id = "sg-xxxxxxxx"
 subnet_ids        = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
 assign_public_ip  = true

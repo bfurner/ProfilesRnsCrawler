@@ -145,12 +145,12 @@ variable "security_group_id" {
 
 variable "subnet_ids" {
   type        = list(string)
-  description = "Subnet IDs for the Batch Fargate compute environment"
+  description = "Subnet IDs for the Batch Fargate compute environment. If assign_public_ip is false, these must have NAT (or VPC endpoints) for egress."
 }
 
 variable "assign_public_ip" {
   type        = bool
-  description = "Assign a public IP to the Fargate Batch job (needed if subnets have no NAT for S3/GraphDB egress)"
+  description = "Assign a public IP to the Fargate Batch job. Set false only when the chosen subnets already have NAT (or VPC endpoints) for ECR/S3/SSM/GraphDB egress."
   default     = true
 }
 
