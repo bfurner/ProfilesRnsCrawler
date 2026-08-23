@@ -1,0 +1,53 @@
+aws_region = "us-east-2"
+app_name   = "profiles-rns-graphdb"
+env_name   = "staging"
+
+# Resource names
+bucket_name                      = "profiles-rns-graphdb-staging-rdf"
+ecr_repo_name                    = "profiles-rns-graphdb-staging-loader-repo"
+batch_compute_environment_name   = "profiles-rns-graphdb-staging-batch-ce"
+batch_job_queue_name             = "profiles-rns-graphdb-staging-batch-queue"
+batch_job_definition_name        = "profiles-rns-graphdb-staging-batch-job"
+batch_scheduled_job_name         = "profiles-rns-graphdb-staging-weekly-load"
+batch_service_role               = "profiles-rns-graphdb-staging-batch-service-role"
+batch_job_role                   = "profiles-rns-graphdb-staging-batch-job-role"
+batch_execution_role             = "profiles-rns-graphdb-staging-batch-execution-role"
+eventbridge_batch_role           = "profiles-rns-graphdb-staging-eventbridge-batch-role"
+batch_trigger_event_rule_name    = "profiles-rns-graphdb-staging-batch-trigger-rule"
+batch_log_group_name             = "/aws/batch/profiles-rns-graphdb-staging"
+graphdb_password_ssm_name        = "/profiles-rns-graphdb/staging/graphdb_password"
+failure_notification_topic       = "profiles-rns-graphdb-staging-batch-failure-topic"
+
+force_delete        = false
+s3_versioning       = "Enabled"
+s3_encryption       = true
+s3_enable_lifecycle = false
+app_tag             = "latest"
+batch_max_vcpus     = 4
+batch_vcpu          = 0.25
+batch_memory        = 512
+
+# Sundays at 12:00 UTC
+schedule_expression = "cron(0 12 ? * SUN *)"
+
+# Network: task must reach GraphDB + AWS APIs (S3/SSM/ECR).
+# assign_public_ip = false only if these subnets already have NAT (or VPC endpoints).
+security_group_id = "sg-xxxxxxxx"
+subnet_ids        = ["subnet-aaaaaaaa", "subnet-bbbbbbbb"]
+assign_public_ip  = true
+
+graphdb_base_url = "https://graphdb.example.org:7200"
+graphdb_repo     = "profiles"
+graphdb_username = "admin"
+graphdb_password = "CHANGE_ME"
+
+rdf_s3_prefix = "rdf/"
+load_paths    = "/data/rdf"
+
+# Optional failure emails (leave empty to skip SNS topic)
+notification_emails = []
+
+default_tags = {
+  Environment = "Staging"
+  Project     = "profiles-rns-graphdb"
+}
