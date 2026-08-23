@@ -7,6 +7,9 @@ https://graphdb.ontotext.com/documentation/11.3/enabling-security.html
 https://graphdb.ontotext.com/documentation/11.4/access-control.html#basic-authentication
 
 When GraphDB security is enabled, pass credentials via --username/--password
+
+S3 mode lists objects under a prefix and streams one RDF object at a time
+into GraphDB (no full-prefix download).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import BinaryIO
 
 RDF_CONTENT_TYPE = "application/rdf+xml"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -52,6 +56,26 @@ def collect_files(paths: list[Path]) -> list[Path]:
     return files
 
 
+def s3_client(region: str):
+    try:
+        import boto3
+    except ImportError as exc:
+        raise SystemExit("boto3 is required for S3 mode (pip install boto3)") from exc
+    return boto3.client("s3", region_name=region)
+
+
+def list_rdf_objects(s3, bucket: str, prefix: str) -> list[str]:
+    keys: list[str] = []
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents") or []:
+            key = obj["Key"]
+            if key.endswith("/") or not key.lower().endswith(".rdf"):
+                continue
+            keys.append(key)
+    return keys
+
+
 def statements_url(base_url: str, repo: str) -> str:
     return f"{base_url.rstrip('/')}/repositories/{repo}/statements"
 
@@ -82,7 +106,7 @@ def redact_curl_args(args: list[str]) -> list[str]:
                 user, _, _ = arg.partition(":")
                 redacted.append(f"{user}:***")
             else:
-                redacted.append("***") # mask the entire next argument, just in case
+                redacted.append("***")  # mask the entire next argument, just in case
             hide_next = False
             continue
         if arg in ("-u", "--user"):
@@ -93,30 +117,12 @@ def redact_curl_args(args: list[str]) -> list[str]:
     return redacted
 
 
-def run_curl(args: list[str], dry_run: bool) -> tuple[int, str]:
-    if dry_run:
-        print("  " + " ".join(shlex.quote(a) for a in redact_curl_args(args)))
-        return 204, ""
-    result = subprocess.run(args, capture_output=True, text=True)
-    body = (result.stdout or "") + (result.stderr or "")
-    http_code = 0
-    if result.stdout:
-        lines = result.stdout.strip().splitlines()
-        if lines and lines[-1].isdigit():
-            http_code = int(lines[-1])
-            body = "\n".join(lines[:-1]).strip()
-    if http_code == 0:
-        http_code = 500 if result.returncode != 0 else 200
-    return http_code, body
-
-
-def load_file(
-    path: Path,
+def graphdb_curl_args(
     url: str,
-    dry_run: bool,
+    data_arg: str,
     username: str | None = None,
     password: str | None = None,
-) -> int:
+) -> list[str]:
     curl = [
         "curl",
         "-sS",
@@ -129,15 +135,82 @@ def load_file(
         "-H",
         f"Content-Type: {RDF_CONTENT_TYPE}",
         "--data-binary",
-        f"@{path}",
+        data_arg,
     ]
     if username is not None and password is not None:
         # GraphDB Basic auth (enabled by default when security is on).
         curl.extend(["--user", f"{username}:{password}"])
     curl.append(url)
+    return curl
+
+
+def parse_curl_output(stdout: str, stderr: str, returncode: int) -> tuple[int, str]:
+    body = (stdout or "") + (stderr or "")
+    http_code = 0
+    if stdout:
+        lines = stdout.strip().splitlines()
+        if lines and lines[-1].isdigit():
+            http_code = int(lines[-1])
+            body = "\n".join(lines[:-1]).strip()
+    if http_code == 0:
+        http_code = 500 if returncode != 0 else 200
+    return http_code, body
+
+
+def run_curl(args: list[str], dry_run: bool) -> tuple[int, str]:
+    if dry_run:
+        print("  " + " ".join(shlex.quote(a) for a in redact_curl_args(args)))
+        return 204, ""
+    result = subprocess.run(args, capture_output=True, text=True)
+    return parse_curl_output(result.stdout, result.stderr, result.returncode)
+
+
+def load_file(
+    path: Path,
+    url: str,
+    dry_run: bool,
+    username: str | None = None,
+    password: str | None = None,
+) -> int:
+    curl = graphdb_curl_args(url, f"@{path}", username, password)
     code, body = run_curl(curl, dry_run)
     if not str(code).startswith("2"):
         print(f"  FAILED HTTP {code}: {body}", file=sys.stderr)
+    return code
+
+
+def load_stream(
+    body: BinaryIO | None,
+    url: str,
+    dry_run: bool,
+    username: str | None = None,
+    password: str | None = None,
+) -> int:
+    curl = graphdb_curl_args(url, "@-", username, password)
+    if dry_run:
+        print("  " + " ".join(shlex.quote(a) for a in redact_curl_args(curl)))
+        return 204
+    if body is None:
+        raise SystemExit("internal error: missing RDF stream")
+    proc = subprocess.Popen(
+        curl,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert proc.stdin is not None
+    try:
+        shutil.copyfileobj(body, proc.stdin)
+    finally:
+        proc.stdin.close()
+    stdout_b, stderr_b = proc.communicate()
+    code, response_body = parse_curl_output(
+        stdout_b.decode("utf-8", errors="replace"),
+        stderr_b.decode("utf-8", errors="replace"),
+        proc.returncode,
+    )
+    if not str(code).startswith("2"):
+        print(f"  FAILED HTTP {code}: {response_body}", file=sys.stderr)
     return code
 
 
@@ -149,9 +222,24 @@ def main() -> None:
     )
     parser.add_argument(
         "paths",
-        nargs="+",
+        nargs="*",
         type=Path,
-        help="RDF file(s) or directory(ies) to load",
+        help="RDF file(s) or directory(ies) to load (local mode)",
+    )
+    parser.add_argument(
+        "--s3-bucket",
+        default=os.environ.get("RDF_S3_BUCKET"),
+        help="S3 bucket to stream RDF from (default: $RDF_S3_BUCKET)",
+    )
+    parser.add_argument(
+        "--s3-prefix",
+        default=os.environ.get("RDF_S3_PREFIX", "rdf/"),
+        help="S3 key prefix to list (default: $RDF_S3_PREFIX or rdf/)",
+    )
+    parser.add_argument(
+        "--aws-region",
+        default=os.environ.get("AWS_REGION", "us-east-2"),
+        help="AWS region for S3 (default: $AWS_REGION or us-east-2)",
     )
     parser.add_argument(
         "-b",
@@ -189,33 +277,57 @@ def main() -> None:
         parser.error("repository id is required (-r / --repo or GRAPHDB_REPO)")
     if shutil.which("curl") is None:
         raise SystemExit("curl is required on PATH")
+    if not args.s3_bucket and not args.paths:
+        parser.error("provide local RDF paths or --s3-bucket / RDF_S3_BUCKET")
 
     username, password = resolve_credentials(args.username, args.password)
-
-    files = collect_files(args.paths)
-    if not files:
-        raise SystemExit("No RDF files found.")
-
     url = statements_url(args.base_url, args.repo)
 
     print(f"GraphDB: {args.base_url.rstrip('/')}")
     print(f"Repo:    {args.repo}")
     print(f"Auth:    {username if username else '(none)'}")
-    print(f"Files:   {len(files)}")
-    print()
 
     ok = 0
     fail = 0
-    for i, path in enumerate(files, start=1):
-        print(f"[{i}/{len(files)}] POST {path.name}")
-        code = load_file(path, url, args.dry_run, username, password)
-        if str(code).startswith("2"):
-            ok += 1
-        else:
-            fail += 1
+
+    if args.s3_bucket:
+        s3 = s3_client(args.aws_region)
+        keys = list_rdf_objects(s3, args.s3_bucket, args.s3_prefix)
+        if not keys:
+            raise SystemExit(
+                f"No RDF objects found in s3://{args.s3_bucket}/{args.s3_prefix}"
+            )
+        print(f"S3:      s3://{args.s3_bucket}/{args.s3_prefix} ({len(keys)} objects)")
+        print()
+        for i, key in enumerate(keys, start=1):
+            print(f"[{i}/{len(keys)}] POST {key}")
+            if args.dry_run:
+                code = load_stream(None, url, True, username, password)
+            else:
+                response = s3.get_object(Bucket=args.s3_bucket, Key=key)
+                code = load_stream(response["Body"], url, False, username, password)
+            if str(code).startswith("2"):
+                ok += 1
+            else:
+                fail += 1
+        total = len(keys)
+    else:
+        files = collect_files(args.paths)
+        if not files:
+            raise SystemExit("No RDF files found.")
+        print(f"Files:   {len(files)}")
+        print()
+        for i, path in enumerate(files, start=1):
+            print(f"[{i}/{len(files)}] POST {path.name}")
+            code = load_file(path, url, args.dry_run, username, password)
+            if str(code).startswith("2"):
+                ok += 1
+            else:
+                fail += 1
+        total = len(files)
 
     print()
-    print(f"Done. succeeded={ok} failed={fail} total={len(files)}")
+    print(f"Done. succeeded={ok} failed={fail} total={total}")
     if fail:
         raise SystemExit(1)
 

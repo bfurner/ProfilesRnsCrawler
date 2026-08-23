@@ -6,17 +6,10 @@ set -euo pipefail
 : "${GRAPHDB_REPO:?GRAPHDB_REPO is required}"
 
 RDF_S3_PREFIX="${RDF_S3_PREFIX:-rdf/}"
-LOAD_PATHS="${LOAD_PATHS:-/data/rdf}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
-LOCAL_RDF_DIR="/data/rdf"
 GRAPHDB_USERNAME="${GRAPHDB_USERNAME:-}"
 GRAPHDB_PASSWORD="${GRAPHDB_PASSWORD:-}"
 GRAPHDB_PASSWORD_SSM_PARAM="${GRAPHDB_PASSWORD_SSM_PARAM:-}"
-
-mkdir -p "${LOCAL_RDF_DIR}"
-
-echo "Syncing s3://${RDF_S3_BUCKET}/${RDF_S3_PREFIX} -> ${LOCAL_RDF_DIR}"
-aws s3 sync "s3://${RDF_S3_BUCKET}/${RDF_S3_PREFIX}" "${LOCAL_RDF_DIR}" --region "${AWS_REGION}"
 
 if [[ -n "${GRAPHDB_PASSWORD_SSM_PARAM}" ]]; then
   echo "Fetching GraphDB password from SSM ${GRAPHDB_PASSWORD_SSM_PARAM}"
@@ -28,12 +21,11 @@ if [[ -n "${GRAPHDB_PASSWORD_SSM_PARAM}" ]]; then
     --output text)"
 fi
 
-# shellcheck disable=SC2206
-paths=( ${LOAD_PATHS} )
-
 cmd=(
   python3 /app/LoadToGraphDB.py
-  "${paths[@]}"
+  --s3-bucket "${RDF_S3_BUCKET}"
+  --s3-prefix "${RDF_S3_PREFIX}"
+  --aws-region "${AWS_REGION}"
   --base-url "${GRAPHDB_BASE_URL}"
   --repo "${GRAPHDB_REPO}"
 )
@@ -45,5 +37,5 @@ if [[ -n "${GRAPHDB_PASSWORD}" ]]; then
   cmd+=(--password "${GRAPHDB_PASSWORD}")
 fi
 
-echo "Running LoadToGraphDB.py against GraphDB ${GRAPHDB_BASE_URL} repo=${GRAPHDB_REPO}"
+echo "Streaming RDF from s3://${RDF_S3_BUCKET}/${RDF_S3_PREFIX} to GraphDB ${GRAPHDB_BASE_URL} repo=${GRAPHDB_REPO}"
 exec "${cmd[@]}"
