@@ -157,7 +157,10 @@ def load_email_tokens(csv_file: Path, base_profile_prefix: str) -> list[tuple[st
             token = (row.get("emailencrypted") or "").strip()
             if not person or not token:
                 continue
-            key = person.replace(base_profile_prefix, "")
+            if person.startswith(base_profile_prefix):
+                key = person[len(base_profile_prefix) :]
+            else:
+                key = person
             rows.append((key, row, token))
     return rows
 
