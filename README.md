@@ -75,9 +75,17 @@ Example:
 ```bash
 python3 GetProfiles.py \
   --url 'https://profiles.rush.edu/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page=' \
-  --outfile links/profiles.csv \
-  --rdf_folder rdf
+  --outfile links/rush_people_links.csv \
+  --rdf_folder rdf/rush
 ```
+
+```bash
+python3 GetProfiles.py \
+  --url 'https://profiles.uchicago.edu/profiles/search/default.aspx?searchtype=people&classuri=http://xmlns.com/foaf/0.1/Person&searchfor=&perpage=100&offset=0&page=' \
+  --outfile links/uchicago_people_links.csv \
+  --rdf_folder rdf/uchicago
+```
+
 
 This workflow:
 
